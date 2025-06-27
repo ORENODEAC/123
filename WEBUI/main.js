@@ -103,16 +103,49 @@ function parsePointsFile(text) {
     return points;
 }
 function parseAlignData(txt) {
-    let lines = txt.split('\n').map(s=>s.trim()).filter(s=>s.length>0);
+    let lines = txt.split('\n').map(s => s.trim()).filter(s => s.length > 0 && !s.startsWith('#'));
     let scale = 1.0;
-    let R = [[1,0,0],[0,1,0],[0,0,1]];
-    let t = [0,0,0];
-    for(let i=0;i<lines.length;i++){
-        if(lines[i].startsWith('scale')) scale = parseFloat(lines[i].split(' ')[1]);
-        if(lines[i]==='R') R = [lines[i+1].split(' ').map(Number), lines[i+2].split(' ').map(Number), lines[i+3].split(' ').map(Number)];
-        if(lines[i]==='t') t = lines[i+1].split(' ').map(Number);
+    let R = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+    let t = [0, 0, 0];
+    for (let i = 0; i < lines.length; i++) {
+        if (lines[i].startsWith("scale")) {
+            let parts = lines[i].split(/\s+/);
+            scale = parseFloat(parts[1] || lines[i + 1]); // 支援: "scale x.xx" 或下一行
+            if (isNaN(scale) && i + 1 < lines.length) {
+                scale = parseFloat(lines[++i]);
+            }
+        }
+        if (lines[i] === "R" || lines[i].toLowerCase().includes('rotation')) {
+            R = [
+                lines[i + 1].split(/\s+/).map(Number),
+                lines[i + 2].split(/\s+/).map(Number),
+                lines[i + 3].split(/\s+/).map(Number)
+            ];
+            i += 3;
+        }
+        if (lines[i] === "t" || lines[i].toLowerCase().includes('translation')) {
+            t = lines[i + 1].split(/\s+/).map(Number);
+            i += 1;
+        }
+        // 支援最簡格式: [scale, R1, R2, R3, t]
+        if (!isNaN(parseFloat(lines[i])) && i + 4 < lines.length) {
+            let s = parseFloat(lines[i]);
+            let r1 = lines[i + 1].split(/\s+/).map(Number);
+            let r2 = lines[i + 2].split(/\s+/).map(Number);
+            let r3 = lines[i + 3].split(/\s+/).map(Number);
+            let tt = lines[i + 4].split(/\s+/).map(Number);
+            if (
+                r1.length === 3 && r2.length === 3 && r3.length === 3 &&
+                tt.length === 3 && !isNaN(s)
+            ) {
+                scale = s;
+                R = [r1, r2, r3];
+                t = tt;
+                break;
+            }
+        }
     }
-    return {scale, R, t};
+    return { scale, R, t };
 }
 function applyAlignToPoint(pt, group) {
     if (!group.alignData || !group.useAlign) return pt;
@@ -756,3 +789,6 @@ viewcube.addEventListener('click', function(e){
     }
 });
 render();
+
+
+
