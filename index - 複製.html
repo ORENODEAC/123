@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>COLMAP 視覺化器</title>
+    <style>
+        html, body { width:100vw; height:100vh; margin:0; padding:0; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            overflow: hidden;
+        }
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        #canvas {
+            display: block;
+            cursor: grab;
+            background: transparent;
+        }
+        #canvas:active {
+            cursor: grabbing;
+        }
+        #viewcube {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 200;
+            background: rgba(0,0,0,0);
+            pointer-events: auto;
+            cursor: pointer;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.14);
+            user-select: none;
+        }
+        .drop-zone {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            right: 20px;
+            height: 120px;
+            border: 3px dashed #ffffff66;
+            border-radius: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+            z-index: 100;
+        }
+        .drop-zone.dragover {
+            border-color: #4CAF50;
+            background: rgba(76, 175, 80, 0.2);
+            transform: scale(1.02);
+        }
+        .drop-text {
+            color: white;
+            font-size: 18px;
+            text-align: center;
+            font-weight: 500;
+        }
+        .info-panel {
+            position: absolute;
+            top: 160px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            font-size: 14px;
+            max-width: 320px;
+            z-index: 100;
+        }
+        .controls {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            font-size: 12px;
+            z-index: 100;
+        }
+        .file-status {
+            display: flex;
+            gap: 20px;
+            margin-top: 10px;
+        }
+        .status-item {
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 12px;
+        }
+        .status-pending {
+            background: rgba(255, 193, 7, 0.3);
+            color: #FFC107;
+        }
+        .status-loaded {
+            background: rgba(76, 175, 80, 0.3);
+            color: #4CAF50;
+        }
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 18px;
+            z-index: 200;
+        }
+        .tab-bar {
+            position: fixed;
+            left: 20px;
+            bottom: 20px;
+            z-index: 300;
+            display: flex;
+            gap: 4px;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px #0002;
+            padding: 4px;
+            border: 1px solid #e0e0e0;
+            width: auto;
+            height: auto;
+        }
+        .tab-btn {
+            min-width: 48px;
+            padding: 6px 14px;
+            background: none;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 15px;
+            color: #444;
+            transition: background 0.2s, color 0.2s;
+            font-weight: bold;
+            outline: none;
+        }
+        .tab-btn.active {
+            color: #fff;
+            background: #2196f3;
+        }
+        .tab-btn:not(.active):hover {
+            background: #f1f7fb;
+        }
+        .hidden { display: none !important; }
+        .color-toggle-container {
+            margin-top: 15px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            user-select: none;
+        }
+        .color-toggle-label {
+            color: #fff;
+            font-size: 13px;
+        }
+        .color-toggle-switch {
+            width: 38px;
+            height: 20px;
+            position: relative;
+            display: inline-block;
+        }
+        .color-toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .color-toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: #666;
+            border-radius: 12px;
+            transition: 0.3s;
+        }
+        .color-toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 2px;
+            bottom: 2px;
+            background: #fff;
+            border-radius: 50%;
+            transition: 0.3s;
+        }
+        .color-toggle-switch input:checked + .color-toggle-slider {
+            background: #2196f3;
+        }
+        .color-toggle-switch input:checked + .color-toggle-slider:before {
+            transform: translateX(18px);
+        }
+        .cloud-visibility-list {
+            margin-top: 12px;
+            margin-bottom: 0;
+            padding: 0;
+            list-style: none;
+        }
+        .cloud-visibility-item {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            margin-bottom: 2px;
+        }
+        .cloud-visibility-switch {
+            width: 34px;
+            height: 18px;
+            position: relative;
+            display: inline-block;
+        }
+        .cloud-visibility-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .cloud-visibility-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: #888;
+            border-radius: 10px;
+            transition: 0.3s;
+        }
+        .cloud-visibility-switch input:checked + .cloud-visibility-slider {
+            background: #4CAF50;
+        }
+        .cloud-visibility-slider:before {
+            position: absolute;
+            content: "";
+            height: 12px;
+            width: 12px;
+            left: 3px;
+            bottom: 3px;
+            background: #fff;
+            border-radius: 50%;
+            transition: 0.3s;
+        }
+        .cloud-visibility-switch input:checked + .cloud-visibility-slider:before {
+            transform: translateX(16px);
+        }
+        .cloud-label {
+            font-size: 13px;
+            color: #fff;
+            padding: 0 4px;
+            border-radius: 5px;
+            background: rgba(0,0,0,0.23);
+        }
+        .cloud-label-color {
+            display: inline-block;
+            width: 13px;
+            height: 13px;
+            border-radius: 50%;
+            margin-right: 3px;
+            vertical-align: middle;
+        }
+    </style>
+</head>
+<body>
+<div id="container">
+    <!-- 計算分頁內容 -->
+    <div id="tab-calc-content" class="tab-content">
+        <h1 style="color:#fff;">這是「計算」分頁</h1>
+        <p style="font-size:1.2em;color:#fff;">此分頁內容會填滿整個畫面。</p>
+        <!-- 在這裡加入計算相關元件 -->
+    </div>
+    <!-- 檢視分頁內容 -->
+    <div id="tab-view-content" class="tab-content hidden">
+        <canvas id="canvas"></canvas>
+        <canvas id="viewcube" width="80" height="80"></canvas>
+        <div class="drop-zone" id="dropZone">
+            <div class="drop-text">
+                拖拽 images.txt 和 points3D.txt 檔案到此處<br>
+                <small>支援同時拖拽或分別拖拽，可多組疊加</small>
+            </div>
+        </div>
+        <div class="info-panel">
+            <h3 style="margin-top: 0;">COLMAP 視覺化器</h3>
+            <div class="file-status">
+                <div class="status-item status-pending" id="imagesStatus">Images: 未載入</div>
+                <div class="status-item status-pending" id="pointsStatus">Points: 未載入</div>
+            </div>
+            <div id="stats" style="margin-top: 10px; font-size: 11px; color: #ccc;"></div>
+            <div class="color-toggle-container">
+                <span class="color-toggle-label">點雲顏色：按組區分</span>
+                <label class="color-toggle-switch">
+                    <input type="checkbox" id="colorModeToggle">
+                    <span class="color-toggle-slider"></span>
+                </label>
+            </div>
+            <!-- 新增每組點雲的顯示開關 -->
+            <ul id="cloudVisibilityList" class="cloud-visibility-list"></ul>
+        </div>
+        <div class="controls">
+            <strong>Blender風格控制:</strong><br>
+            • 左鍵拖拽: 軌道旋轉<br>
+            • Shift+左鍵: 平移視圖<br>
+            • 中鍵拖拽: 平移視圖<br>
+            • 滾輪: 縮放<br>
+            • R: 重置視角<br>
+            • F: 聚焦場景<br>
+            • 1/3/7: 前/右/頂視圖
+        </div>
+        <div class="loading" id="loading" style="display: none;">處理檔案中...</div>
+    </div>
+    <!-- 左下角分頁按鈕 -->
+    <div class="tab-bar">
+        <button class="tab-btn active" id="tab-calc-btn" onclick="switchTab('calc')">計算</button>
+        <button class="tab-btn" id="tab-view-btn" onclick="switchTab('view')">檢視</button>
+    </div>
+</div>
+<script>
+function switchTab(tab) {
+    document.getElementById('tab-calc-btn').classList.toggle('active', tab === 'calc');
+    document.getElementById('tab-view-btn').classList.toggle('active', tab === 'view');
+    document.getElementById('tab-calc-content').classList.toggle('hidden', tab !== 'calc');
+    document.getElementById('tab-view-content').classList.toggle('hidden', tab !== 'view');
+    if(tab === 'view') setTimeout(resizeCanvas, 0);
+}
+switchTab('calc');
+
+const canvas = document.getElementById('canvas');
+const gl = canvas.getContext('webgl');
+if (!gl) { alert('您的瀏覽器不支援 WebGL'); }
+function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    gl.viewport(0, 0, canvas.width, canvas.height);
+}
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+const vertexShaderSource = `
+    attribute vec3 a_position;
+    attribute vec3 a_color;
+    uniform mat4 u_modelViewMatrix;
+    uniform mat4 u_projectionMatrix;
+    uniform float u_pointSize;
+    varying vec3 v_color;
+    void main() {
+        gl_Position = u_projectionMatrix * u_modelViewMatrix * vec4(a_position, 1.0);
+        gl_PointSize = u_pointSize;
+        v_color = a_color;
+    }
+`;
+const fragmentShaderSource = `
+    precision mediump float;
+    varying vec3 v_color;
+    void main() {
+        gl_FragColor = vec4(v_color, 1.0);
+    }
+`;
+function createShader(gl, type, source) {
+    const shader = gl.createShader(type);
+    gl.shaderSource(shader, source); gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        console.error('著色器編譯錯誤:', gl.getShaderInfoLog(shader));
+        gl.deleteShader(shader); return null;
+    }
+    return shader;
+}
+function createProgram(gl, vertexShader, fragmentShader) {
+    const program = gl.createProgram();
+    gl.attachShader(program, vertexShader); gl.attachShader(program, fragmentShader); gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+        console.error('程式連結錯誤:', gl.getProgramInfoLog(program));
+        gl.deleteProgram(program); return null;
+    }
+    return program;
+}
+const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
+const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
+const program = createProgram(gl, vertexShader, fragmentShader);
+const positionLocation = gl.getAttribLocation(program, 'a_position');
+const colorLocation = gl.getAttribLocation(program, 'a_color');
+const modelViewMatrixLocation = gl.getUniformLocation(program, 'u_modelViewMatrix');
+const projectionMatrixLocation = gl.getUniformLocation(program, 'u_projectionMatrix');
+const pointSizeLocation = gl.getUniformLocation(program, 'u_pointSize');
+
+function identity4() {
+    return [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1];
+}
+function multiplyMatrix4(a, b) {
+    const out = new Array(16);
+    for (let i=0; i<4; ++i) for (let j=0; j<4; ++j) {
+        out[i*4+j] = 0;
+        for (let k=0; k<4; ++k) out[i*4+j] += a[i*4+k]*b[k*4+j];
+    }
+    return out;
+}
+function rotateY(angle) {
+    const c = Math.cos(angle), s = Math.sin(angle);
+    return [c,0,-s,0, 0,1,0,0, s,0,c,0, 0,0,0,1];
+}
+function rotateX(angle) {
+    const c = Math.cos(angle), s = Math.sin(angle);
+    return [1,0,0,0, 0,c,s,0, 0,-s,c,0, 0,0,0,1];
+}
+function transpose4(m) {
+    return [
+        m[0],m[4],m[8],m[12],
+        m[1],m[5],m[9],m[13],
+        m[2],m[6],m[10],m[14],
+        m[3],m[7],m[11],m[15]
+    ];
+}
+function mat4vec3mul(m, v) {
+    return [
+        m[0]*v[0] + m[1]*v[1] + m[2]*v[2],
+        m[4]*v[0] + m[5]*v[1] + m[6]*v[2],
+        m[8]*v[0] + m[9]*v[1] + m[10]*v[2]
+    ];
+}
+let camera = {
+    target: [0,0,0],
+    distance: 10,
+    rotation: identity4()
+};
+let interaction = {
+    isDragging: false, isMiddleDragging: false, isShiftDragging: false,
+    lastMouseX: 0, lastMouseY: 0,
+    sensitivity: 0.015,
+    panSensitivity: 0.005,
+    zoomSensitivity: 0.1
+};
+canvas.addEventListener('mousedown', (e) => {
+    if (e.button === 0) {
+        if (e.shiftKey) interaction.isShiftDragging = true;
+        else interaction.isDragging = true;
+    } else if (e.button === 1) interaction.isMiddleDragging = true;
+    else if (e.button === 2 && e.shiftKey) interaction.isMiddleDragging = true;
+    interaction.lastMouseX = e.clientX;
+    interaction.lastMouseY = e.clientY;
+    e.preventDefault();
+});
+canvas.addEventListener('mousemove', (e) => {
+    const dx = e.clientX - interaction.lastMouseX;
+    const dy = e.clientY - interaction.lastMouseY;
+    if (interaction.isDragging) {
+        camera.rotation = multiplyMatrix4(rotateY(-dx * interaction.sensitivity), camera.rotation);
+        camera.rotation = multiplyMatrix4(camera.rotation, rotateX(-dy * interaction.sensitivity));
+        render();
+    } else if (interaction.isMiddleDragging || interaction.isShiftDragging) {
+        let right = mat4vec3mul(camera.rotation, [1,0,0]);
+        let up = mat4vec3mul(camera.rotation, [0,1,0]);
+        const panSpeed = camera.distance * interaction.panSensitivity;
+        camera.target[0] -= right[0] * dx * panSpeed;
+        camera.target[1] -= right[1] * dx * panSpeed;
+        camera.target[2] -= right[2] * dx * panSpeed;
+        camera.target[0] += up[0] * dy * panSpeed;
+        camera.target[1] += up[1] * dy * panSpeed;
+        camera.target[2] += up[2] * dy * panSpeed;
+        render();
+    }
+    interaction.lastMouseX = e.clientX;
+    interaction.lastMouseY = e.clientY;
+});
+canvas.addEventListener('mouseup', (e) => {
+    interaction.isDragging = false;
+    interaction.isMiddleDragging = false;
+    interaction.isShiftDragging = false;
+});
+canvas.addEventListener('wheel', (e) => {
+    const zoomFactor = 1 + (e.deltaY > 0 ? interaction.zoomSensitivity : -interaction.zoomSensitivity);
+    camera.distance = Math.max(0.1, Math.min(100, camera.distance * zoomFactor));
+    render();
+    e.preventDefault();
+});
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+document.addEventListener('keydown', (e) => {
+    switch(e.key.toLowerCase()) {
+        case 'r': camera.rotation=identity4();camera.distance=10;camera.target=[0,0,0];render();break;
+        case 'f': if(pointsDataList.length && totalPoints()>0) focusOnScene();break;
+        case '1': camera.rotation=identity4();render();break;
+        case '3': camera.rotation=rotateY(Math.PI/2);render();break;
+        case '7': camera.rotation=rotateX(-Math.PI/2);render();break;
+    }
+});
+function getCameraMatrix() {
+    let forward = mat4vec3mul(camera.rotation, [0,0,1]);
+    let eye = [
+        camera.target[0] - forward[0]*camera.distance,
+        camera.target[1] - forward[1]*camera.distance,
+        camera.target[2] - forward[2]*camera.distance
+    ];
+    let up = mat4vec3mul(camera.rotation, [0,1,0]);
+    return createLookAtMatrix(eye, camera.target, up);
+}
+function createLookAtMatrix(eye, center, up) {
+    let z = normalize(subtract(eye, center));
+    let x = normalize(cross(up, z));
+    let y = cross(z, x);
+    return new Float32Array([
+        x[0], y[0], z[0], 0,
+        x[1], y[1], z[1], 0,
+        x[2], y[2], z[2], 0,
+        -dot(x, eye), -dot(y, eye), -dot(z, eye), 1
+    ]);
+}
+function normalize(v) { const l=Math.sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2]); return l>0?[v[0]/l,v[1]/l,v[2]/l]:[0,0,0]; }
+function subtract(a, b) { return [a[0]-b[0],a[1]-b[1],a[2]-b[2]]; }
+function cross(a, b) { return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]; }
+function dot(a, b) { return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]; }
+
+let pointsDataList = []; // [{points, label}]
+let imagesDataList = []; // [{images, label}]
+let pointsBuffers = [], colorsBuffers = [];
+let cameraFrustumBuffers = [], cameraFrustumColorBuffers = [], cameraFrustumLineCounts = [];
+let cloudVisibility = []; // [true, false, ...] 每組點雲/相機的顯示開關
+
+// 點雲顏色切換模式 (預設分組顏色)
+let colorGroupMode = true;
+
+const colorModeToggle = document.getElementById('colorModeToggle');
+colorModeToggle.checked = true;
+colorModeToggle.addEventListener('change', function() {
+    colorGroupMode = colorModeToggle.checked;
+    setupBuffers();
+    render();
+});
+
+const cloudVisibilityList = document.getElementById('cloudVisibilityList');
+
+function totalPoints() {
+    let n = 0; for (let i=0; i<pointsDataList.length; ++i) if (cloudVisibility[i]) n += pointsDataList[i].points.length; return n;
+}
+
+const camColors = [
+    [1, 1, 0],    // 黃
+    [1, 0.4, 0.4],// 紅
+    [0, 1, 1],    // 青
+    [0.3, 1, 0.3],// 綠
+    [0.6, 0.5, 1],// 藍紫
+    [1, 0.5, 1],  // 粉紫
+    [1, 0.8, 0.5],// 橙
+    [0.7, 1, 0.7] // 淺綠
+];
+
+const dropZone = document.getElementById('dropZone');
+const loading = document.getElementById('loading');
+const imagesStatus = document.getElementById('imagesStatus');
+const pointsStatus = document.getElementById('pointsStatus');
+const stats = document.getElementById('stats');
+dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => { dropZone.classList.remove('dragover'); });
+dropZone.addEventListener('drop', (e) => {
+    e.preventDefault(); dropZone.classList.remove('dragover');
+    processFiles(Array.from(e.dataTransfer.files));
+});
+async function processFiles(files) {
+    loading.style.display = 'block';
+    let newPoints = null, newImages = null;
+    let pointsLabel = "", imagesLabel = "";
+    for (const file of files) {
+        const text = await file.text();
+        if (file.name.includes('images.txt')) {
+            newImages = parseImagesFile(text);
+            imagesLabel = file.name;
+        } else if (file.name.includes('points3D.txt')) {
+            newPoints = parsePointsFile(text);
+            pointsLabel = file.name;
+        }
+    }
+    let addedAt = -1;
+    if (newPoints) {
+        pointsDataList.push({ points: newPoints, label: pointsLabel || `points3D_${pointsDataList.length+1}` });
+        cloudVisibility.push(true); // 預設顯示
+        addedAt = pointsDataList.length - 1;
+    }
+    if (newImages) {
+        imagesDataList.push({ images: newImages, label: imagesLabel || `images_${imagesDataList.length+1}` });
+        // cloudVisibility 已於 newPoints 處 push
+        if (addedAt === -1) {
+            // 沒有點雲但有相機，也要有一個 visibility
+            cloudVisibility.push(true);
+            addedAt = cloudVisibility.length - 1;
+        }
+    }
+    setupBuffers();
+    updateCloudVisibilityList();
+    focusOnScene();
+    render();
+    updateStats();
+    loading.style.display = 'none';
+}
+function parseImagesFile(text) {
+    const lines = text.split('\n').filter(line => line.trim() && !line.startsWith('#'));
+    const images = [];
+    for (let i = 0; i < lines.length; i += 2) {
+        const parts = lines[i].trim().split(/\s+/);
+        if (parts.length >= 10) {
+            const qw = parseFloat(parts[1]), qx = parseFloat(parts[2]), qy = parseFloat(parts[3]), qz = parseFloat(parts[4]);
+            const tx = parseFloat(parts[5]), ty = parseFloat(parts[6]), tz = parseFloat(parts[7]);
+            images.push({
+                id: parseInt(parts[0]),
+                quaternion: [qw, qx, qy, qz],
+                translation: [tx, ty, tz],
+                name: parts[9]
+            });
+        }
+    }
+    return images;
+}
+function parsePointsFile(text) {
+    const lines = text.split('\n').filter(line => line.trim() && !line.startsWith('#'));
+    const points = [];
+    for (const line of lines) {
+        const parts = line.trim().split(/\s+/);
+        if (parts.length >= 7) {
+            const x = parseFloat(parts[1]), y = parseFloat(parts[2]), z = parseFloat(parts[3]);
+            const r = parseInt(parts[4]) / 255.0, g = parseInt(parts[5]) / 255.0, b = parseInt(parts[6]) / 255.0;
+            points.push({ position:[x,y,z], color:[r,g,b] });
+        }
+    }
+    return points;
+}
+function quatToMatrix(q) {
+    const [w, x, y, z] = q;
+    return [
+        1 - 2*y*y - 2*z*z,   2*x*y - 2*z*w,       2*x*z + 2*y*w,
+        2*x*y + 2*z*w,       1 - 2*x*x - 2*z*z,   2*y*z - 2*x*w,
+        2*x*z - 2*y*w,       2*y*z + 2*x*w,       1 - 2*x*x - 2*y*y
+    ];
+}
+function transpose3(m) { return [m[0],m[3],m[6],m[1],m[4],m[7],m[2],m[5],m[8]]; }
+function mat3mulv(m, v) {
+    return [
+        m[0]*v[0]+m[1]*v[1]+m[2]*v[2],
+        m[3]*v[0]+m[4]*v[1]+m[5]*v[2],
+        m[6]*v[0]+m[7]*v[1]+m[8]*v[2]
+    ];
+}
+function addv(a, b) { return [a[0]+b[0], a[1]+b[1], a[2]+b[2]]; }
+function getCameraFrustumVertices(q, t, scale=0.3, fov=0.9) {
+    const R = quatToMatrix(q);
+    const Rt = transpose3(R);
+    const C = [
+        -(Rt[0]*t[0] + Rt[1]*t[1] + Rt[2]*t[2]),
+        -(Rt[3]*t[0] + Rt[4]*t[1] + Rt[5]*t[2]),
+        -(Rt[6]*t[0] + Rt[7]*t[1] + Rt[8]*t[2])
+    ];
+    const depth = scale, aspect = 4/3;
+    const halfH = Math.tan(fov/2) * depth, halfW = halfH * aspect;
+    const corners = [
+        [ halfW,  halfH, depth],
+        [-halfW,  halfH, depth],
+        [-halfW, -halfH, depth],
+        [ halfW, -halfH, depth]
+    ];
+    for(let i=0; i<corners.length; ++i)
+        corners[i] = addv(mat3mulv(Rt, corners[i]), C);
+    return { C, corners };
+}
+function setupBuffers() {
+    pointsBuffers = [];
+    colorsBuffers = [];
+    for (let i = 0; i < pointsDataList.length; ++i) {
+        const group = pointsDataList[i];
+        const positions = [], colors = [];
+        let groupColor = camColors[i % camColors.length];
+        for (const point of group.points) {
+            positions.push(...point.position);
+            if (colorGroupMode) {
+                colors.push(...groupColor);
+            } else {
+                colors.push(...point.color);
+            }
+        }
+        const pbuf = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, pbuf);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+        pointsBuffers.push(pbuf);
+
+        const cbuf = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, cbuf);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(colors), gl.STATIC_DRAW);
+        colorsBuffers.push(cbuf);
+    }
+
+    cameraFrustumBuffers = [];
+    cameraFrustumColorBuffers = [];
+    cameraFrustumLineCounts = [];
+    for (let groupIdx = 0; groupIdx < imagesDataList.length; ++groupIdx) {
+        const group = imagesDataList[groupIdx];
+        let camLines = [], camLineColors = [];
+        const color = camColors[groupIdx % camColors.length];
+        const edgeColor = color;
+        const faceColor = color.map(c => c * 0.7);
+        for (const img of group.images) {
+            const { C, corners } = getCameraFrustumVertices(img.quaternion, img.translation);
+            for (let i=0; i<4; ++i) {
+                camLines.push(...C); camLines.push(...corners[i]);
+                camLineColors.push(...edgeColor); camLineColors.push(...edgeColor);
+            }
+            for (let i=0; i<4; ++i) {
+                camLines.push(...corners[i]); camLines.push(...corners[(i+1)%4]);
+                camLineColors.push(...faceColor); camLineColors.push(...faceColor);
+            }
+        }
+        const fbuf = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, fbuf);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(camLines), gl.STATIC_DRAW);
+        cameraFrustumBuffers.push(fbuf);
+
+        const fcolor = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, fcolor);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(camLineColors), gl.STATIC_DRAW);
+        cameraFrustumColorBuffers.push(fcolor);
+
+        cameraFrustumLineCounts.push(camLines.length / 3);
+    }
+}
+function updateCloudVisibilityList() {
+    cloudVisibilityList.innerHTML = '';
+    // camera/pointcloud 一一對應，依據組數顯示
+    const n = Math.max(pointsDataList.length, imagesDataList.length);
+    for (let i = 0; i < n; ++i) {
+        const labelStr = pointsDataList[i]?.label || imagesDataList[i]?.label || `組 #${i+1}`;
+        const item = document.createElement('li');
+        item.className = 'cloud-visibility-item';
+        // 色環
+        const colorBall = document.createElement('span');
+        colorBall.className = 'cloud-label-color';
+        const c = camColors[i % camColors.length];
+        colorBall.style.background = `rgb(${Math.round(c[0]*255)},${Math.round(c[1]*255)},${Math.round(c[2]*255)})`;
+        // 標籤
+        const label = document.createElement('span');
+        label.className = 'cloud-label';
+        label.textContent = labelStr;
+        // 開關
+        const switchLabel = document.createElement('label');
+        switchLabel.className = 'cloud-visibility-switch';
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = cloudVisibility[i];
+        checkbox.addEventListener('change', () => {
+            cloudVisibility[i] = checkbox.checked;
+            render();
+            updateStats();
+        });
+        const slider = document.createElement('span');
+        slider.className = 'cloud-visibility-slider';
+        switchLabel.appendChild(checkbox);
+        switchLabel.appendChild(slider);
+        item.appendChild(switchLabel);
+        item.appendChild(colorBall);
+        item.appendChild(label);
+        cloudVisibilityList.appendChild(item);
+    }
+}
+function focusOnScene() {
+    if (!pointsDataList.length) return;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    let hasPoint = false;
+    for (let i = 0; i < pointsDataList.length; ++i) {
+        if (!cloudVisibility[i]) continue;
+        for (const point of pointsDataList[i].points) {
+            const [x, y, z] = point.position;
+            minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+            minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+            minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
+            hasPoint = true;
+        }
+    }
+    if (!hasPoint) return;
+    camera.target = [(minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2];
+    const sizeX = maxX - minX, sizeY = maxY - minY, sizeZ = maxZ - minZ;
+    const maxSize = Math.max(sizeX, sizeY, sizeZ);
+    camera.distance = maxSize * 1.5;
+    render();
+}
+function updateStats() {
+    let statsText = '';
+    for (let i = 0; i < pointsDataList.length; ++i) {
+        statsText += `<span style="color:${cloudVisibility[i] ? '#fff':'#aaa'}">點雲 #${i+1}（${pointsDataList[i].label}）: ${pointsDataList[i].points.length.toLocaleString()} 個點</span><br>`;
+    }
+    for (let i = 0; i < imagesDataList.length; ++i) {
+        statsText += `<span style="color:${cloudVisibility[i] ? '#fff':'#aaa'}">相機 #${i+1}（${imagesDataList[i].label}）: ${imagesDataList[i].images.length} 個位置</span><br>`;
+    }
+    stats.innerHTML = statsText || "尚未載入資料";
+    imagesStatus.textContent = imagesDataList.length > 0 ? `已載入 ${imagesDataList.length} 組 images` : "Images: 未載入";
+    imagesStatus.className = imagesDataList.length > 0 ? 'status-item status-loaded' : 'status-item status-pending';
+    pointsStatus.textContent = pointsDataList.length > 0 ? `已載入 ${pointsDataList.length} 組 points3D` : "Points: 未載入";
+    pointsStatus.className = pointsDataList.length > 0 ? 'status-item status-loaded' : 'status-item status-pending';
+}
+function createPerspectiveMatrix(fov, aspect, near, far) {
+    const f = Math.tan(Math.PI * 0.5 - 0.5 * fov);
+    const rangeInv = 1.0 / (near - far);
+    return new Float32Array([
+        f / aspect, 0, 0, 0,
+        0, f, 0, 0,
+        0, 0, (near + far) * rangeInv, -1,
+        0, 0, near * far * rangeInv * 2, 0
+    ]);
+}
+function render() {
+    gl.clearColor(0.1, 0.1, 0.15, 1.0);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.enable(gl.DEPTH_TEST);
+    gl.useProgram(program);
+    const aspect = canvas.width / canvas.height;
+    const projectionMatrix = createPerspectiveMatrix(Math.PI / 4, aspect, 0.1, 250);
+    gl.uniformMatrix4fv(projectionMatrixLocation, false, projectionMatrix);
+    const modelViewMatrix = getCameraMatrix();
+    gl.uniformMatrix4fv(modelViewMatrixLocation, false, modelViewMatrix);
+
+    gl.uniform1f(pointSizeLocation, 2.0);
+    for (let i = 0; i < pointsDataList.length; ++i) {
+        if (!cloudVisibility[i]) continue;
+        const group = pointsDataList[i];
+        if (!group.points.length) continue;
+        gl.bindBuffer(gl.ARRAY_BUFFER, pointsBuffers[i]);
+        gl.enableVertexAttribArray(positionLocation);
+        gl.vertexAttribPointer(positionLocation, 3, gl.FLOAT, false, 0, 0);
+        gl.bindBuffer(gl.ARRAY_BUFFER, colorsBuffers[i]);
+        gl.enableVertexAttribArray(colorLocation);
+        gl.vertexAttribPointer(colorLocation, 3, gl.FLOAT, false, 0, 0);
+        gl.drawArrays(gl.POINTS, 0, group.points.length);
+    }
+    gl.uniform1f(pointSizeLocation, 1.0);
+    for (let i = 0; i < imagesDataList.length; ++i) {
+        if (!cloudVisibility[i]) continue;
+        if (!cameraFrustumLineCounts[i]) continue;
+        gl.bindBuffer(gl.ARRAY_BUFFER, cameraFrustumBuffers[i]);
+        gl.enableVertexAttribArray(positionLocation);
+        gl.vertexAttribPointer(positionLocation, 3, gl.FLOAT, false, 0, 0);
+        gl.bindBuffer(gl.ARRAY_BUFFER, cameraFrustumColorBuffers[i]);
+        gl.enableVertexAttribArray(colorLocation);
+        gl.vertexAttribPointer(colorLocation, 3, gl.FLOAT, false, 0, 0);
+        gl.drawArrays(gl.LINES, 0, cameraFrustumLineCounts[i]);
+    }
+    updateViewCube();
+}
+const viewcube = document.getElementById('viewcube');
+const vctx = viewcube.getContext('2d');
+let viewcubeDragging = false;
+let viewcubeLastX = 0, viewcubeLastY = 0;
+let viewcubeLastRot = identity4();
+function drawViewCube(rot) {
+    vctx.clearRect(0, 0, 80, 80);
+    const size = 24, cx = 40, cy = 40;
+    const verts = [
+        [-1,-1,-1], [ 1,-1,-1], [ 1, 1,-1], [-1, 1,-1],
+        [-1,-1, 1], [ 1,-1, 1], [ 1, 1, 1], [-1, 1, 1]
+    ];
+    function mat4vec3mulV(m, v) {
+        return [
+            m[0]*v[0] + m[1]*v[1] + m[2]*v[2],
+            m[4]*v[0] + m[5]*v[1] + m[6]*v[2],
+            m[8]*v[0] + m[9]*v[1] + m[10]*v[2]
+        ];
+    }
+    const pts = verts.map(p => {
+        let v = mat4vec3mulV(rot, p);
+        return [cx + v[0]*size, cy - v[1]*size];
+    });
+    const edges = [
+        [0,1],[1,2],[2,3],[3,0],
+        [4,5],[5,6],[6,7],[7,4],
+        [0,4],[1,5],[2,6],[3,7]
+    ];
+    vctx.strokeStyle = "#fff"; vctx.lineWidth = 2;
+    for(const [a,b] of edges){
+        vctx.beginPath(); vctx.moveTo(pts[a][0],pts[a][1]); vctx.lineTo(pts[b][0],pts[b][1]); vctx.stroke();
+    }
+    vctx.font = "bold 12px sans-serif";
+    vctx.textAlign = "center";
+    vctx.textBaseline = "middle";
+    const faces = [
+        {label:"F", idxs:[0,1,2,3], color:"#4CAF50", center:[0,0,-1]},
+        {label:"B", idxs:[4,5,6,7], color:"#e91e63", center:[0,0,1]},
+        {label:"L", idxs:[0,3,7,4], color:"#03a9f4", center:[-1,0,0]},
+        {label:"R", idxs:[1,2,6,5], color:"#ff9800", center:[1,0,0]},
+        {label:"T", idxs:[3,2,6,7], color:"#fff176", center:[0,1,0]},
+        {label:"D", idxs:[0,1,5,4], color:"#ab47bc", center:[0,-1,0]},
+    ];
+    for(const f of faces){
+        const center = f.idxs.reduce((a,i)=>[a[0]+pts[i][0],a[1]+pts[i][1]],[0,0]).map(v=>v/4);
+        vctx.fillStyle = f.color;
+        vctx.globalAlpha = 0.5;
+        vctx.beginPath();
+        vctx.moveTo(pts[f.idxs[0]][0], pts[f.idxs[0]][1]);
+        for(let i=1;i<4;i++) vctx.lineTo(pts[f.idxs[i]][0], pts[f.idxs[i]][1]);
+        vctx.closePath(); vctx.fill(); vctx.globalAlpha = 1;
+        vctx.fillStyle = "#222";
+        vctx.fillText(f.label, center[0], center[1]);
+    }
+}
+function updateViewCube() { drawViewCube(camera.rotation); }
+viewcube.addEventListener('mousedown', function(e){
+    viewcubeDragging = true;
+    viewcubeLastX = e.clientX;
+    viewcubeLastY = e.clientY;
+    viewcubeLastRot = camera.rotation.slice();
+    e.preventDefault();
+});
+window.addEventListener('mousemove', function(e){
+    if(viewcubeDragging){
+        let dx = e.clientX - viewcubeLastX, dy = e.clientY - viewcubeLastY;
+        camera.rotation = multiplyMatrix4(rotateY(-dx * 0.04), viewcubeLastRot);
+        camera.rotation = multiplyMatrix4(camera.rotation, rotateX(-dy * 0.04));
+        render();
+    }
+});
+window.addEventListener('mouseup', function(e){ viewcubeDragging = false; });
+viewcube.addEventListener('click', function(e){
+    if(viewcubeDragging) return;
+    const rect = viewcube.getBoundingClientRect();
+    const x = e.clientX - rect.left - 40, y = e.clientY - rect.top - 40;
+    const faces = [
+        {label:"F", vec:[0,0,-1], rot:identity4()},
+        {label:"B", vec:[0,0,1], rot:rotateY(Math.PI)},
+        {label:"L", vec:[-1,0,0], rot:rotateY(-Math.PI/2)},
+        {label:"R", vec:[1,0,0], rot:rotateY(Math.PI/2)},
+        {label:"T", vec:[0,1,0], rot:rotateX(-Math.PI/2)},
+        {label:"D", vec:[0,-1,0], rot:rotateX(Math.PI/2)},
+    ];
+    let hit = null, minDist = 999;
+    for(const f of faces){
+        let v = mat4vec3mul(camera.rotation, f.vec);
+        const px = 40+v[0]*24, py=40-v[1]*24;
+        const d2 = (x-px)*(x-px)+(y-py)*(y-py);
+        if (d2<400 && d2<minDist) { hit=f; minDist=d2;}
+    }
+    if (hit) {
+        camera.rotation = hit.rot;
+        render();
+    }
+});
+render();
+</script>
+</body>
+</html>
